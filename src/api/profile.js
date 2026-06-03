@@ -34,7 +34,6 @@
 // };
 
 
-```js
 import api from '../config/api';
 
 export const profileApi = {
@@ -43,7 +42,6 @@ export const profileApi = {
 
     const user = response.data;
 
-    // Map backend data to frontend shape
     return {
       ...user,
       avatar:
@@ -92,5 +90,4 @@ export const profileApi = {
     return response.data;
   }
 };
-```
 
