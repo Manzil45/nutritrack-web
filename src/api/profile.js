@@ -36,40 +36,14 @@
 
 import api from '../config/api';
 
-export const authApi = {
-  async login(credentials) {
-    const response = await api.post('/api/auth/login', credentials);
-
-    if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
-    }
-
-    return {
-      user: response.data,
-      token: response.data.token
-    };
+export const profileApi = {
+  async getProfile() {
+    const response = await api.get('/api/profile');
+    return response.data;
   },
 
-  async signup(userData) {
-    const payload = {
-      name: userData.name,
-      email: userData.email,
-      password: userData.password
-    };
-
-    const response = await api.post('/api/auth/register', payload);
-
-    if (response.data.token) {
-      localStorage.setItem('token', response.data.token);
-    }
-
-    return {
-      user: response.data,
-      token: response.data.token
-    };
-  },
-
-  logout() {
-    localStorage.removeItem('token');
+  async updateProfile(data) {
+    const response = await api.put('/api/profile', data);
+    return response.data;
   }
 };
