@@ -5,9 +5,9 @@ export default function Navbar() {
     <nav className="fixed top-0 w-full z-50 bg-white/70 backdrop-blur-xl font-headline antialiased shadow-sm">
       <div className="flex justify-between items-center px-6 h-16 w-full max-w-screen-2xl mx-auto">
         <div className="flex items-center gap-8">
-          <Link to="/" className="text-2xl font-bold tracking-tight text-slate-900">
+          {/* <Link to="/" className="text-2xl font-bold tracking-tight text-slate-900">
             NutriTrack
-          </Link>
+          </Link> */}
           <div className="hidden md:flex gap-6 items-center">
             <Link to="/" className="text-green-600 font-semibold cursor-pointer active:scale-95 transition-transform duration-200">
               Home
