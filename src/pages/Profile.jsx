@@ -30,8 +30,8 @@ export default function Profile() {
           setTempBio(data.description);
           setTempAvatar(data.avatar);
         }
-      } catch (err) {
-        console.error("Error fetching profile", err);
+      } catch (_err) {
+        console.error("Error fetching profile", _err);
       } finally {
         if (isMounted) setLoading(false);
       }
@@ -50,8 +50,8 @@ export default function Profile() {
     try {
       await profileApi.togglePreference(key, newValue);
       toast(`${key.replace(/([A-Z])/g, ' $1')} updated!`);
-    } catch (err) {
-      console.error(err);
+    } catch (_err) {
+      console.error(_err);
       toast("Failed to update preference", "error");
     }
   };
@@ -72,7 +72,7 @@ export default function Profile() {
       setProfile(prev => ({ ...prev, avatar: tempAvatar }));
       setIsEditingAvatar(false);
       toast("Profile picture updated!");
-    } catch (err) {
+    } catch (_err) {
       toast("Failed to update avatar", "error");
       setIsEditingAvatar(false);
     }
@@ -94,7 +94,7 @@ export default function Profile() {
       setProfile(prev => ({ ...prev, dailyGoal: Number(tempGoal) }));
       setIsEditingGoal(false);
       toast("Daily goal updated!");
-    } catch (err) {
+    } catch (_err) {
       toast("Failed to update goal", "error");
       setIsEditingGoal(false);
     }
@@ -130,7 +130,7 @@ export default function Profile() {
       }));
       setter(false);
       toast(`${isName ? 'Name' : 'Bio'} updated!`);
-    } catch (err) {
+    } catch (_err) {
       toast(`Failed to update ${isName ? 'Name' : 'Bio'}`, "error");
       setter(false);
     }
