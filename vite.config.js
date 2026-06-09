@@ -8,5 +8,10 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: 'src/tests/setupTests.js',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'json'],
+      outDir: './coverage',
+    }
   }
 })

@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-  workflow_dispatch: # ← tambah
+  workflow_dispatch:
 
 jobs:
   # ======================================
@@ -35,36 +35,80 @@ jobs:
       - name: Run Test with Coverage
         run: npm test -- --coverage
 
+      - name: Upload Coverage Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: ./coverage
+          retention-days: 7
+
       - name: Build Application
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
         run: npm run build
 
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: ./dist
+          retention-days: 1
+
+      - name: Notify Discord on Test Success
+        if: success()
+        run: |
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
+          -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "✅ Test Passed!",
+              "description": "Pipeline **Frontend CI/CD** berhasil di tahap testing.",
+              "color": 3066993,
+              "fields": [
+                {"name": "Repository", "value": "${{ github.repository }}"},
+                {"name": "Branch", "value": "${{ github.ref_name }}"},
+                {"name": "Triggered by", "value": "${{ github.actor }}"},
+                {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
+              ]
+            }]
+          }'
+
+      - name: Notify Discord on Test Failure
+        if: failure()
+        run: |
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
+          -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "❌ Test Failed!",
+              "description": "Pipeline **Frontend CI/CD** gagal di tahap testing.",
+              "color": 15158332,
+              "fields": [
+                {"name": "Repository", "value": "${{ github.repository }}"},
+                {"name": "Branch", "value": "${{ github.ref_name }}"},
+                {"name": "Triggered by", "value": "${{ github.actor }}"},
+                {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
+              ]
+            }]
+          }'
+
   # ======================================
   # JOB 2: DEPLOY
   # ======================================
   deploy:
-    needs: test # ← deploy hanya jalan kalau test sukses
-    if: success() # ← conditional deploy
+    needs: test
+    if: success()
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v4
         with:
-          node-version: 22
-          cache: 'npm'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Build Application
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
-        run: npm run build
+          name: dist
+          path: ./dist
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
@@ -72,3 +116,41 @@ jobs:
           app-name: nutritrack-frontend-bisa
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_FRONTEND }}
           package: ./dist
+
+      - name: Notify Discord on Deploy Success
+        if: success()
+        run: |
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
+          -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "🚀 Deploy Berhasil!",
+              "description": "Pipeline **Frontend CI/CD** berhasil deploy ke production.",
+              "color": 3066993,
+              "fields": [
+                {"name": "Repository", "value": "${{ github.repository }}"},
+                {"name": "Branch", "value": "${{ github.ref_name }}"},
+                {"name": "Triggered by", "value": "${{ github.actor }}"},
+                {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
+              ]
+            }]
+          }'
+
+      - name: Notify Discord on Deploy Failure
+        if: failure()
+        run: |
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
+          -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "❌ Deploy Failed!",
+              "description": "Pipeline **Frontend CI/CD** gagal di tahap deploy.",
+              "color": 15158332,
+              "fields": [
+                {"name": "Repository", "value": "${{ github.repository }}"},
+                {"name": "Branch", "value": "${{ github.ref_name }}"},
+                {"name": "Triggered by", "value": "${{ github.actor }}"},
+                {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
+              ]
+            }]
+          }'
