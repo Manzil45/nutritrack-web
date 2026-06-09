@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import SavedMealCard from "../components/SavedMealCard";
 import { mealsApi } from "../api/meals";
 import { toast } from "../utils/toast";
@@ -20,7 +20,7 @@ export default function Meals() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const fetchMeals = async () => {
+  const fetchMeals = useCallback(async () => {
     setLoading(true);
     try {
       const data = await mealsApi.searchMeals(searchQuery);
@@ -31,12 +31,12 @@ export default function Meals() {
     } finally {
       setLoading(false);
     }
-  };
+}, [searchQuery]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => fetchMeals(), 300);
     return () => clearTimeout(timeoutId);
-  }, [searchQuery]);
+  }, [fetchMeals]);
 
   const handleCreateMeal = async (e) => {
     e.preventDefault();
