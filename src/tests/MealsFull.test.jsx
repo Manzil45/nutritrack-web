@@ -32,7 +32,7 @@ vi.mock('../components/SavedMealCard', () => ({
 }));
 
 import { mealsApi } from '../api/meals';
-import { toast } from '../utils/toast';
+// import { toast } from '../utils/toast';
 
 describe('Meals Page', () => {
   beforeEach(() => {
