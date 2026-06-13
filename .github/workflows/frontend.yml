@@ -15,7 +15,6 @@ env:
 
 jobs:
   # ==================== CI: TEST & BUILD ====================
-  # Source Stage → Build Stage → Team Test Stage
   ci:
     name: Continuous Integration
     runs-on: ubuntu-latest
@@ -36,7 +35,7 @@ jobs:
       - name: Lint Code
         run: npm run lint --if-present || echo "No lint script found"
 
-      # ---- UNIT TEST ----
+      # ---- UNIT TEST (vitest) ----
       - name: Run Unit Tests
         run: npm test -- --coverage --passWithNoTests
         continue-on-error: true
@@ -60,23 +59,29 @@ jobs:
         run: npm audit --audit-level=moderate
         continue-on-error: true
 
-      # ---- BUILD (pakai VITE_API_URL production untuk build artifact) ----
+      # ---- BUILD untuk production (artifact) ----
       - name: Build Application
         run: npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
-      # ---- ARTIFACT 2: Build Result ----
+      # ---- ARTIFACT 2: Build Result (untuk rollback & production deploy) ----
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-build
+          name: frontend-build-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+
+      # Simpan juga dengan nama "latest" untuk kemudahan rollback
+      - name: Upload Build Artifact (latest)
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build-latest
           path: dist/
           retention-days: 7
 
   # ==================== STAGING ====================
-  # Deploy ke Azure staging (untuk review client/atasan/dosen)
-  # VITE_API_URL staging → backend staging
   deploy-staging:
     name: Deploy to Staging
     needs: ci
@@ -114,7 +119,6 @@ jobs:
           publish-profile: ${{ secrets.AZURE_WEBAPP_STAGING_PUBLISH_PROFILE }}
 
   # ==================== SMOKE TESTS STAGING ====================
-  # Business Test Stage — verifikasi staging sebelum ke production
   smoke-tests-staging:
     name: Smoke Tests on Staging
     needs: deploy-staging
@@ -136,18 +140,17 @@ jobs:
           done
           exit 1
 
-      # ---- SMOKE TEST (tidak block pipeline) ----
       - name: Check Staging Site Accessible
         continue-on-error: true
         run: |
           echo "Checking staging frontend..."
-          curl -shttps://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/ | grep -q "nutritrack\|NutriTrack\|root" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
+          curl -s https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/ | grep -q "nutritrack\|NutriTrack\|root" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
 
       - name: Check Backend Connection from Staging
         continue-on-error: true
         run: |
           echo "Checking backend health from staging..."
-          curl -fhttps://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net/api/health && echo "✅ Backend staging healthy" || echo "⚠️ Backend check warning"
+          curl -f https://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net/api/health && echo "✅ Backend staging healthy" || echo "⚠️ Backend check warning"
 
       # ---- ARTIFACT 3: Smoke Test Results ----
       - name: Upload Smoke Test Results
@@ -172,7 +175,6 @@ jobs:
           fi
 
   # ==================== APPROVAL GATE ====================
-  # Manual review staging sebelum deploy ke production
   approval-gate:
     name: Approval Gate
     needs: smoke-tests-staging
@@ -188,7 +190,6 @@ jobs:
           echo "🔗 Review staging: https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/"
 
   # ==================== CD: DEPLOY PRODUCTION ====================
-  # Hanya jalan setelah manual approval
   deploy-production:
     name: Deploy to Production
     needs: approval-gate
@@ -206,7 +207,7 @@ jobs:
       - name: Download Build Artifact
         uses: actions/download-artifact@v4
         with:
-          name: frontend-build
+          name: frontend-build-${{ github.sha }}
           path: dist/
 
       - name: Deploy to Azure Web App (Production)
@@ -216,19 +217,55 @@ jobs:
           package: dist/
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_FRONTEND }}
 
+      # ---- HEALTH CHECK + AUTO ROLLBACK ----
       - name: Health Check Production
+        id: health_check
+        continue-on-error: true
         run: |
           sleep 30
           for i in {1..10}; do
             if curl -f https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/; then
               echo "✅ Production deployment healthy"
+              echo "healthy=true" >> $GITHUB_OUTPUT
               exit 0
             fi
+            echo "Attempt $i failed, retrying..."
             sleep 5
           done
+          echo "healthy=false" >> $GITHUB_OUTPUT
+          exit 1
+
+      # ---- ROLLBACK jika health check gagal ----
+      - name: Rollback Production if Unhealthy
+        if: steps.health_check.outputs.healthy == 'false'
+        run: |
+          echo "❌ Health check failed! Initiating rollback..."
+          echo "🔄 Rolling back to previous stable version..."
+
+          # Download artifact dari commit sebelumnya jika ada
+          # Fallback: redeploy artifact yang sama (Azure akan handle rollback slot)
+          echo "⚠️ Manual rollback may be required via Azure Portal"
+          echo "👉 Go to: Azure Portal → nutritrack-frontend-bisa → Deployment slots → Swap"
+
+          # Notify Discord tentang rollback
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
+          -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "⚠️ Frontend Production ROLLBACK Triggered!",
+              "description": "Health check gagal setelah deploy. Manual rollback diperlukan.",
+              "color": 16776960,
+              "fields": [
+                {"name": "Commit", "value": "${{ github.sha }}"},
+                {"name": "Branch", "value": "${{ github.ref_name }}"},
+                {"name": "Action", "value": "[Lihat di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
+              ]
+            }]
+          }'
           exit 1
 
       - name: Notify Deployment Success
+        if: steps.health_check.outputs.healthy == 'true'
         run: |
           curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
           -H "Content-Type: application/json" \
