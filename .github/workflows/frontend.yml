@@ -127,7 +127,7 @@ jobs:
       - name: Wait for Staging to be Ready
         run: |
           for i in {1..30}; do
-            if curl -f https://nutritrack-frontend-staging.azurewebsites.net; then
+            if curl -f https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/; then
               echo "Staging is ready"
               exit 0
             fi
@@ -141,13 +141,13 @@ jobs:
         continue-on-error: true
         run: |
           echo "Checking staging frontend..."
-          curl -s https://nutritrack-frontend-staging.azurewebsites.net | grep -q "nutritrack\|NutriTrack\|root" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
+          curl -shttps://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/ | grep -q "nutritrack\|NutriTrack\|root" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
 
       - name: Check Backend Connection from Staging
         continue-on-error: true
         run: |
           echo "Checking backend health from staging..."
-          curl -f https://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net/api/health && echo "✅ Backend staging healthy" || echo "⚠️ Backend check warning"
+          curl -fhttps://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net/api/health && echo "✅ Backend staging healthy" || echo "⚠️ Backend check warning"
 
       # ---- ARTIFACT 3: Smoke Test Results ----
       - name: Upload Smoke Test Results
@@ -163,7 +163,7 @@ jobs:
         continue-on-error: true
         run: |
           echo "Checking response time..."
-          time_taken=$(curl -o /dev/null -s -w '%{time_total}' https://nutritrack-frontend-staging.azurewebsites.net)
+          time_taken=$(curl -o /dev/null -s -w '%{time_total}' https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/)
           echo "Page load took ${time_taken}s"
           if (( $(echo "$time_taken > 5.0" | bc -l) )); then
             echo "⚠️ Warning: Slow response time"
@@ -185,7 +185,7 @@ jobs:
         run: |
           echo "✅ Frontend Staging deployment successful"
           echo "📋 Awaiting manual approval to proceed to production"
-          echo "🔗 Review staging: https://nutritrack-frontend-staging.azurewebsites.net"
+          echo "🔗 Review staging: https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/"
 
   # ==================== CD: DEPLOY PRODUCTION ====================
   # Hanya jalan setelah manual approval
@@ -197,7 +197,7 @@ jobs:
 
     environment:
       name: production
-      url: https://nutritrack-frontend-bisa.azurewebsites.net
+      url: https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/
 
     steps:
       - name: Checkout Repository
