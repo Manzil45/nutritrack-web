@@ -85,7 +85,7 @@ jobs:
 
     environment:
       name: staging
-      url: https://nutritrack-frontend-staging.azurewebsites.net
+      url: https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/
 
     steps:
       - name: Checkout Repository
@@ -220,7 +220,7 @@ jobs:
         run: |
           sleep 30
           for i in {1..10}; do
-            if curl -f https://nutritrack-frontend-bisa.azurewebsites.net; then
+            if curl -f https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/; then
               echo "✅ Production deployment healthy"
               exit 0
             fi
