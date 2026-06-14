@@ -12,6 +12,11 @@ on:
 
 env:
   NODE_VERSION: 22
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  STAGING_URL: https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net
+  PRODUCTION_URL: https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net
+  STAGING_API_URL: https://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net
+  PRODUCTION_API_URL: https://nutritrack-backend-bisa-cth6c8dte7cfcmbc.indonesiacentral-01.azurewebsites.net
 
 jobs:
   # ==================== CI: TEST & BUILD ====================
@@ -85,7 +90,7 @@ jobs:
 
     environment:
       name: staging
-      url: https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/
+      url: ${{ env.STAGING_URL }}
 
     steps:
       - name: Checkout Repository
@@ -103,7 +108,7 @@ jobs:
       - name: Build for Staging
         run: npm run build
         env:
-          VITE_API_URL: https://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net
+          VITE_API_URL: ${{ env.STAGING_API_URL }}
 
       - name: Deploy to Azure Web App (Staging)
         id: deploy-staging
@@ -118,7 +123,7 @@ jobs:
         run: |
           sleep 30
           for i in {1..10}; do
-            if curl -f https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/; then
+            if curl -f ${{ env.STAGING_URL }}/; then
               echo "✅ Staging healthy"
               exit 0
             fi
@@ -126,18 +131,16 @@ jobs:
           done
           exit 1
 
-      # ✅ Rollback staging kalau health check gagal
       - name: Rollback Staging on Failure
         if: failure() && steps.staging-health.outcome == 'failure'
         run: |
-          echo "❌ Staging health check failed! Rolling back..."
-          echo "⚠️ Manual rollback may be required via Azure Portal"
+          echo "❌ Staging health check failed!"
           curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
           -H "Content-Type: application/json" \
           -d '{
             "embeds": [{
               "title": "⚠️ Staging Health Check Failed — Rollback!",
-              "description": "Health check staging gagal.",
+              "description": "Health check staging gagal, perlu rollback manual via Azure Portal.",
               "color": 16776960,
               "fields": [
                 {"name": "Commit", "value": "${{ github.sha }}"},
@@ -154,13 +157,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
       - name: Wait for Staging to be Ready
         run: |
           for i in {1..30}; do
-            if curl -f https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/; then
+            if curl -f ${{ env.STAGING_URL }}/; then
               echo "Staging is ready"
               exit 0
             fi
@@ -171,32 +171,23 @@ jobs:
 
       - name: Check Staging Site Accessible
         run: |
-          curl -s https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/ | grep -q "nutritrack\|NutriTrack\|root" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
+          curl -s ${{ env.STAGING_URL }}/ | grep -qi "nutritrack\|root\|NutriTrack" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
 
       - name: Check Backend Connection from Staging
         continue-on-error: true
         run: |
-          curl -f https://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net/api/health && echo "✅ Backend staging healthy" || echo "⚠️ Backend check warning"
+          curl -f ${{ env.STAGING_API_URL }}/api/health && echo "✅ Backend staging healthy" || echo "⚠️ Backend check warning"
 
       - name: Performance Check
         continue-on-error: true
         run: |
-          time_taken=$(curl -o /dev/null -s -w '%{time_total}' https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/)
+          time_taken=$(curl -o /dev/null -s -w '%{time_total}' ${{ env.STAGING_URL }}/)
           echo "Page load took ${time_taken}s"
           if (( $(echo "$time_taken > 5.0" | bc -l) )); then
             echo "⚠️ Warning: Slow response time"
           else
             echo "✅ Response time OK"
           fi
-
-      - name: Upload Smoke Test Results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-test-results-staging-frontend
-          path: |
-            playwright-report/
-            .lighthouseci/
 
   # ==================== E2E TESTING ====================
   e2e-testing:
@@ -219,21 +210,22 @@ jobs:
 
       - name: Install Playwright
         run: npx playwright install --with-deps chromium
-        continue-on-error: true
 
       - name: Run E2E Tests
-        run: npx playwright test --reporter=json --output=e2e-results.json
-        continue-on-error: true
+        run: npx playwright test --reporter=json
         env:
-          BASE_URL: https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net
-          API_URL: https://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net
+          BASE_URL: ${{ env.STAGING_URL }}
+          API_URL: ${{ env.STAGING_API_URL }}
 
       - name: Upload E2E Test Results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-test-results-frontend
-          path: e2e-results.json
+          path: |
+            e2e-results.json
+            playwright-report/
+          if-no-files-found: warn
 
   # ==================== APPROVAL GATE ====================
   approval-gate:
@@ -246,8 +238,6 @@ jobs:
     steps:
       - name: Notify Approval Required
         run: |
-          echo "✅ Frontend Staging + E2E testing successful"
-          echo "📋 Awaiting manual approval to proceed to production"
           curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
           -H "Content-Type: application/json" \
           -d '{
@@ -258,7 +248,7 @@ jobs:
               "fields": [
                 {"name": "Branch", "value": "${{ github.ref_name }}"},
                 {"name": "Commit", "value": "${{ github.sha }}"},
-                {"name": "Staging URL", "value": "https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/"},
+                {"name": "Staging URL", "value": "${{ env.STAGING_URL }}"},
                 {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
               ]
             }]
@@ -273,7 +263,7 @@ jobs:
 
     environment:
       name: production
-      url: https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/
+      url: ${{ env.PRODUCTION_URL }}
 
     steps:
       - name: Checkout Repository
@@ -298,7 +288,7 @@ jobs:
         run: |
           sleep 30
           for i in {1..10}; do
-            if curl -f https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/; then
+            if curl -f ${{ env.PRODUCTION_URL }}/; then
               echo "✅ Production deployment healthy"
               exit 0
             fi
@@ -307,18 +297,16 @@ jobs:
           done
           exit 1
 
-      # ✅ Rollback production kalau health check gagal
       - name: Rollback Production on Failure
         if: failure() && steps.health-check.outcome == 'failure'
         run: |
-          echo "❌ Production health check failed! Rolling back..."
-          echo "⚠️ Manual rollback may be required via Azure Portal"
+          echo "❌ Production health check failed!"
           curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
           -H "Content-Type: application/json" \
           -d '{
             "embeds": [{
               "title": "⚠️ Production Health Check Failed — Rollback!",
-              "description": "Health check production gagal, perlu rollback manual.",
+              "description": "Health check production gagal, perlu rollback manual via Azure Portal.",
               "color": 16776960,
               "fields": [
                 {"name": "Commit Gagal", "value": "${{ github.sha }}"},
@@ -343,6 +331,7 @@ jobs:
                 {"name": "Commit", "value": "${{ github.sha }}"},
                 {"name": "Branch", "value": "${{ github.ref_name }}"},
                 {"name": "Triggered by", "value": "${{ github.actor }}"},
+                {"name": "URL", "value": "${{ env.PRODUCTION_URL }}"},
                 {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
               ]
             }]
@@ -358,7 +347,7 @@ jobs:
       - name: Wait for Production to be Ready
         run: |
           for i in {1..30}; do
-            if curl -f https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/; then
+            if curl -f ${{ env.PRODUCTION_URL }}/; then
               echo "Production is ready"
               exit 0
             fi
@@ -369,17 +358,17 @@ jobs:
 
       - name: Check Production Site Accessible
         run: |
-          curl -s https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/ | grep -q "nutritrack\|NutriTrack\|root" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
+          curl -s ${{ env.PRODUCTION_URL }}/ | grep -qi "nutritrack\|root\|NutriTrack" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
 
       - name: Check Backend Connection from Production
         continue-on-error: true
         run: |
-          curl -f https://nutritrack-backend-bisa-cth6c8dte7cfcmbc.indonesiacentral-01.azurewebsites.net/api/health && echo "✅ Backend production healthy" || echo "⚠️ Backend check warning"
+          curl -f ${{ env.PRODUCTION_API_URL }}/api/health && echo "✅ Backend production healthy" || echo "⚠️ Backend check warning"
 
       - name: Performance Check Production
         continue-on-error: true
         run: |
-          time_taken=$(curl -o /dev/null -s -w '%{time_total}' https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/)
+          time_taken=$(curl -o /dev/null -s -w '%{time_total}' ${{ env.PRODUCTION_URL }}/)
           echo "Page load took ${time_taken}s"
           if (( $(echo "$time_taken > 5.0" | bc -l) )); then
             echo "⚠️ Warning: Slow response time on production!"
@@ -401,7 +390,7 @@ jobs:
                 {"name": "Environment", "value": "Production"},
                 {"name": "Branch", "value": "${{ github.ref_name }}"},
                 {"name": "Commit", "value": "${{ github.sha }}"},
-                {"name": "URL", "value": "https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/"}
+                {"name": "URL", "value": "${{ env.PRODUCTION_URL }}"}
               ]
             }]
           }'
