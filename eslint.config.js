@@ -13,6 +13,8 @@ export default defineConfig([
       reactHooks.configs.flat.recommended,
       reactRefresh.configs.vite,
     ],
+
+    
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
@@ -48,6 +50,17 @@ export default defineConfig([
         afterAll: 'readonly',
         vi: 'readonly',
       },
+
+
+      
     },
   },
+
+
+{
+  files: ['playwright.config.js'],
+  languageOptions: {
+    globals: globals.node,
+  },
+},
 ])
