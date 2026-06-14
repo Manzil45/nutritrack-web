@@ -35,12 +35,10 @@ jobs:
       - name: Lint Code
         run: npm run lint --if-present || echo "No lint script found"
 
-      # ---- UNIT TEST (vitest) ----
       - name: Run Unit Tests
         run: npm test -- --coverage --passWithNoTests
         continue-on-error: true
 
-      # ---- ARTIFACT 1: Coverage Report ----
       - name: Upload Coverage Report
         if: always()
         uses: actions/upload-artifact@v4
@@ -59,13 +57,11 @@ jobs:
         run: npm audit --audit-level=moderate
         continue-on-error: true
 
-      # ---- BUILD untuk production (artifact) ----
       - name: Build Application
         run: npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
-      # ---- ARTIFACT 2: Build Result (untuk rollback & production deploy) ----
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -73,7 +69,6 @@ jobs:
           path: dist/
           retention-days: 30
 
-      # Simpan juga dengan nama "latest" untuk kemudahan rollback
       - name: Upload Build Artifact (latest)
         uses: actions/upload-artifact@v4
         with:
@@ -105,18 +100,52 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      # Build khusus staging dengan API URL staging
       - name: Build for Staging
         run: npm run build
         env:
           VITE_API_URL: https://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net
 
       - name: Deploy to Azure Web App (Staging)
+        id: deploy-staging
         uses: azure/webapps-deploy@v3
         with:
           app-name: nutritrack-frontend-staging
           package: dist/
           publish-profile: ${{ secrets.AZURE_WEBAPP_STAGING_PUBLISH_PROFILE }}
+
+      - name: Health Check Staging
+        id: staging-health
+        run: |
+          sleep 30
+          for i in {1..10}; do
+            if curl -f https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/; then
+              echo "✅ Staging healthy"
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
+
+      # ✅ Rollback staging kalau health check gagal
+      - name: Rollback Staging on Failure
+        if: failure() && steps.staging-health.outcome == 'failure'
+        run: |
+          echo "❌ Staging health check failed! Rolling back..."
+          echo "⚠️ Manual rollback may be required via Azure Portal"
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
+          -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "⚠️ Staging Health Check Failed — Rollback!",
+              "description": "Health check staging gagal.",
+              "color": 16776960,
+              "fields": [
+                {"name": "Commit", "value": "${{ github.sha }}"},
+                {"name": "Branch", "value": "${{ github.ref_name }}"},
+                {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
+              ]
+            }]
+          }'
 
   # ==================== SMOKE TESTS STAGING ====================
   smoke-tests-staging:
@@ -141,31 +170,17 @@ jobs:
           exit 1
 
       - name: Check Staging Site Accessible
-        continue-on-error: true
         run: |
-          echo "Checking staging frontend..."
           curl -s https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/ | grep -q "nutritrack\|NutriTrack\|root" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
 
       - name: Check Backend Connection from Staging
         continue-on-error: true
         run: |
-          echo "Checking backend health from staging..."
           curl -f https://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net/api/health && echo "✅ Backend staging healthy" || echo "⚠️ Backend check warning"
-
-      # ---- ARTIFACT 3: Smoke Test Results ----
-      - name: Upload Smoke Test Results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-test-results-frontend
-          path: |
-            playwright-report/
-            .lighthouseci/
 
       - name: Performance Check
         continue-on-error: true
         run: |
-          echo "Checking response time..."
           time_taken=$(curl -o /dev/null -s -w '%{time_total}' https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/)
           echo "Page load took ${time_taken}s"
           if (( $(echo "$time_taken > 5.0" | bc -l) )); then
@@ -174,10 +189,56 @@ jobs:
             echo "✅ Response time OK"
           fi
 
+      - name: Upload Smoke Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results-staging-frontend
+          path: |
+            playwright-report/
+            .lighthouseci/
+
+  # ==================== E2E TESTING ====================
+  e2e-testing:
+    name: End-to-End Testing
+    needs: smoke-tests-staging
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Playwright
+        run: npx playwright install --with-deps chromium
+        continue-on-error: true
+
+      - name: Run E2E Tests
+        run: npx playwright test --reporter=json --output=e2e-results.json
+        continue-on-error: true
+        env:
+          BASE_URL: https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net
+          API_URL: https://nutritrack-backend-staging-container-dhbhgca0hvatgabz.indonesiacentral-01.azurewebsites.net
+
+      - name: Upload E2E Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-results-frontend
+          path: e2e-results.json
+
   # ==================== APPROVAL GATE ====================
   approval-gate:
     name: Approval Gate
-    needs: smoke-tests-staging
+    needs: e2e-testing
     runs-on: ubuntu-latest
     environment:
       name: production-approval
@@ -185,9 +246,23 @@ jobs:
     steps:
       - name: Notify Approval Required
         run: |
-          echo "✅ Frontend Staging deployment successful"
+          echo "✅ Frontend Staging + E2E testing successful"
           echo "📋 Awaiting manual approval to proceed to production"
-          echo "🔗 Review staging: https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/"
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
+          -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "📝 APPROVAL REQUIRED — Frontend",
+              "description": "Staging + E2E Testing berhasil, menunggu approval sebelum production.",
+              "color": 16776960,
+              "fields": [
+                {"name": "Branch", "value": "${{ github.ref_name }}"},
+                {"name": "Commit", "value": "${{ github.sha }}"},
+                {"name": "Staging URL", "value": "https://nutritrack-frontend-staging-aea3bpfxbsbubsbd.indonesiacentral-01.azurewebsites.net/"},
+                {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
+              ]
+            }]
+          }'
 
   # ==================== CD: DEPLOY PRODUCTION ====================
   deploy-production:
@@ -211,61 +286,50 @@ jobs:
           path: dist/
 
       - name: Deploy to Azure Web App (Production)
+        id: deploy-production
         uses: azure/webapps-deploy@v3
         with:
           app-name: nutritrack-frontend-bisa
           package: dist/
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_FRONTEND }}
 
-      # ---- HEALTH CHECK + AUTO ROLLBACK ----
       - name: Health Check Production
-        id: health_check
-        continue-on-error: true
+        id: health-check
         run: |
           sleep 30
           for i in {1..10}; do
             if curl -f https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/; then
               echo "✅ Production deployment healthy"
-              echo "healthy=true" >> $GITHUB_OUTPUT
               exit 0
             fi
             echo "Attempt $i failed, retrying..."
             sleep 5
           done
-          echo "healthy=false" >> $GITHUB_OUTPUT
           exit 1
 
-      # ---- ROLLBACK jika health check gagal ----
-      - name: Rollback Production if Unhealthy
-        if: steps.health_check.outputs.healthy == 'false'
+      # ✅ Rollback production kalau health check gagal
+      - name: Rollback Production on Failure
+        if: failure() && steps.health-check.outcome == 'failure'
         run: |
-          echo "❌ Health check failed! Initiating rollback..."
-          echo "🔄 Rolling back to previous stable version..."
-
-          # Download artifact dari commit sebelumnya jika ada
-          # Fallback: redeploy artifact yang sama (Azure akan handle rollback slot)
+          echo "❌ Production health check failed! Rolling back..."
           echo "⚠️ Manual rollback may be required via Azure Portal"
-          echo "👉 Go to: Azure Portal → nutritrack-frontend-bisa → Deployment slots → Swap"
-
-          # Notify Discord tentang rollback
           curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
           -H "Content-Type: application/json" \
           -d '{
             "embeds": [{
-              "title": "⚠️ Frontend Production ROLLBACK Triggered!",
-              "description": "Health check gagal setelah deploy. Manual rollback diperlukan.",
+              "title": "⚠️ Production Health Check Failed — Rollback!",
+              "description": "Health check production gagal, perlu rollback manual.",
               "color": 16776960,
               "fields": [
-                {"name": "Commit", "value": "${{ github.sha }}"},
+                {"name": "Commit Gagal", "value": "${{ github.sha }}"},
                 {"name": "Branch", "value": "${{ github.ref_name }}"},
-                {"name": "Action", "value": "[Lihat di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
+                {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
               ]
             }]
           }'
-          exit 1
 
       - name: Notify Deployment Success
-        if: steps.health_check.outputs.healthy == 'true'
+        if: success()
         run: |
           curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
           -H "Content-Type: application/json" \
@@ -284,12 +348,89 @@ jobs:
             }]
           }'
 
+  # ==================== SMOKE TESTS PRODUCTION ====================
+  smoke-tests-production:
+    name: Smoke Tests on Production
+    needs: deploy-production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Wait for Production to be Ready
+        run: |
+          for i in {1..30}; do
+            if curl -f https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/; then
+              echo "Production is ready"
+              exit 0
+            fi
+            echo "Attempt $i failed, retrying..."
+            sleep 10
+          done
+          exit 1
+
+      - name: Check Production Site Accessible
+        run: |
+          curl -s https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/ | grep -q "nutritrack\|NutriTrack\|root" && echo "✅ Page loads successfully" || echo "⚠️ Page check warning"
+
+      - name: Check Backend Connection from Production
+        continue-on-error: true
+        run: |
+          curl -f https://nutritrack-backend-bisa-cth6c8dte7cfcmbc.indonesiacentral-01.azurewebsites.net/api/health && echo "✅ Backend production healthy" || echo "⚠️ Backend check warning"
+
+      - name: Performance Check Production
+        continue-on-error: true
+        run: |
+          time_taken=$(curl -o /dev/null -s -w '%{time_total}' https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/)
+          echo "Page load took ${time_taken}s"
+          if (( $(echo "$time_taken > 5.0" | bc -l) )); then
+            echo "⚠️ Warning: Slow response time on production!"
+          else
+            echo "✅ Response time OK"
+          fi
+
+      - name: Notify Production Smoke Test Success
+        if: success()
+        run: |
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
+          -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "🟢 FRONTEND PRODUCTION FULLY VERIFIED",
+              "description": "Smoke test production berhasil, frontend berjalan normal.",
+              "color": 3066993,
+              "fields": [
+                {"name": "Environment", "value": "Production"},
+                {"name": "Branch", "value": "${{ github.ref_name }}"},
+                {"name": "Commit", "value": "${{ github.sha }}"},
+                {"name": "URL", "value": "https://nutritrack-frontend-bisa-apadahfrbpcxe2c8.indonesiacentral-01.azurewebsites.net/"}
+              ]
+            }]
+          }'
+
+      - name: Notify Production Smoke Test Failed
+        if: failure()
+        run: |
+          curl -X POST ${{ secrets.DISCORD_WEBHOOK }} \
+          -H "Content-Type: application/json" \
+          -d '{
+            "embeds": [{
+              "title": "🔴 FRONTEND PRODUCTION SMOKE TEST FAILED!",
+              "description": "Deploy berhasil tapi smoke test production gagal. Perlu investigasi!",
+              "color": 15158332,
+              "fields": [
+                {"name": "Environment", "value": "Production"},
+                {"name": "Branch", "value": "${{ github.ref_name }}"},
+                {"name": "Commit", "value": "${{ github.sha }}"},
+                {"name": "Logs", "value": "[Klik di sini](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"}
+              ]
+            }]
+          }'
+
   # ==================== ERROR NOTIFICATION ====================
   notify-failure:
     name: Notify on Failure
     runs-on: ubuntu-latest
     if: failure()
-    needs: [ci, deploy-staging, smoke-tests-staging]
+    needs: [ci, deploy-staging, smoke-tests-staging, e2e-testing, deploy-production, smoke-tests-production]
 
     steps:
       - name: Notify Discord on Failure
