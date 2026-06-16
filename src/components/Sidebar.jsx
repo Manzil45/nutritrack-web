@@ -8,6 +8,10 @@ export default function Sidebar() {
     { path: '/dashboard', label: 'Home', icon: 'home' },
     { path: '/chat', label: 'Chat', icon: 'chat' },
     { path: '/meals', label: 'Saved Meals', icon: 'restaurant_menu' },
+    // === FITUR MEAL REMINDER - START ===
+    // Menu baru untuk membuka halaman alarm makan.
+    { path: '/meal-reminder', label: 'Meals Reminder', icon: 'notifications' },
+    // === FITUR MEAL REMINDER - END ===
     { path: '/profile', label: 'Profile', icon: 'person' },
   ];
 
@@ -29,14 +33,13 @@ export default function Sidebar() {
           {navItems.map((item) => {
             const isActive = location.pathname === item.path;
             return (
-              <Link 
-                key={item.path} 
-                to={item.path} 
-                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all active:scale-[0.98] ${
-                  isActive 
-                    ? 'text-green-600 bg-white shadow-sm' 
-                    : 'text-slate-500 hover:bg-slate-100'
-                }`}
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all active:scale-[0.98] ${isActive
+                  ? 'text-green-600 bg-white shadow-sm'
+                  : 'text-slate-500 hover:bg-slate-100'
+                  }`}
               >
                 <span className="material-symbols-outlined" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>
                   {item.icon}
@@ -63,12 +66,11 @@ export default function Sidebar() {
         {navItems.map((item) => {
           const isActive = location.pathname === item.path;
           return (
-            <Link 
-              key={item.path} 
+            <Link
+              key={item.path}
               to={item.path}
-              className={`flex flex-col items-center justify-center px-5 py-2 active:scale-90 transition-all duration-300 ease-out ${
-                isActive ? 'bg-green-500/10 text-green-600 rounded-2xl' : 'text-slate-400'
-              }`}
+              className={`flex flex-col items-center justify-center px-5 py-2 active:scale-90 transition-all duration-300 ease-out ${isActive ? 'bg-green-500/10 text-green-600 rounded-2xl' : 'text-slate-400'
+                }`}
             >
               <span className="material-symbols-outlined" style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}>
                 {item.icon}

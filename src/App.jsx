@@ -7,6 +7,9 @@ import Signup from './pages/Signup';
 import Dashboard from './pages/Dashboard';
 import Chat from './pages/Chat';
 import Meals from './pages/Meals';
+// === FITUR MEAL REMINDER - START ===
+import MealReminderPage from './pages/MealReminderPage';
+// === FITUR MEAL REMINDER - END ===
 import Profile from './pages/Profile';
 
 function App() {
@@ -17,7 +20,7 @@ function App() {
         <Route path="/" element={<AppLayout />}>
           <Route index element={<Landing />} />
         </Route>
-        
+
         {/* Auth Pages (No Layout) */}
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
@@ -27,6 +30,9 @@ function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/meals" element={<Meals />} />
+          {/* === FITUR MEAL REMINDER - START === */}
+          <Route path="/meal-reminder" element={<MealReminderPage />} />
+          {/* === FITUR MEAL REMINDER - END === */}
           <Route path="/profile" element={<Profile />} />
         </Route>
       </Routes>
