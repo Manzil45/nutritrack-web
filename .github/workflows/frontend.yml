@@ -207,9 +207,6 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Install Dependencies
-        run: npm ci
-
       - name: Build App
         run: npm run build
         env:
@@ -299,7 +296,7 @@ jobs:
               exit 0
             fi
             echo "Attempt $i failed, retrying..."
-            sleep 5
+            sleep 6
           done
           exit 1
 
